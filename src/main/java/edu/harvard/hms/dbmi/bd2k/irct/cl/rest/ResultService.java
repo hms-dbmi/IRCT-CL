@@ -23,8 +23,8 @@ import javax.ws.rs.core.Response;
 
 import edu.harvard.hms.dbmi.bd2k.irct.controller.ResultController;
 import edu.harvard.hms.dbmi.bd2k.irct.dataconverter.ResultDataStream;
-import edu.harvard.hms.dbmi.bd2k.irct.model.result.Result;
-import edu.harvard.hms.dbmi.bd2k.irct.model.result.ResultStatus;
+import edu.harvard.hms.dbmi.bd2k.irct.model.result.Job;
+import edu.harvard.hms.dbmi.bd2k.irct.model.result.JobStatus;
 import edu.harvard.hms.dbmi.bd2k.irct.model.security.User;
 
 /**
@@ -55,12 +55,12 @@ public class ResultService {
 	public Response availableResults() {
 		JsonArrayBuilder response = Json.createArrayBuilder();
 		User user = (User) session.getAttribute("user");
-		List<Result> availableResults = rc.getAvailableResults(user);
+		List<Job> availableResults = rc.getAvailableResults(user);
 
-		for (Result result : availableResults) {
+		for (Job result : availableResults) {
 			JsonObjectBuilder resultJSON = Json.createObjectBuilder();
 			resultJSON.add("resultId", result.getId());
-			resultJSON.add("status", result.getResultStatus().toString());
+			resultJSON.add("status", result.getJobStatus().toString());
 			response.add(resultJSON.build());
 		}
 
@@ -82,13 +82,13 @@ public class ResultService {
 		JsonObjectBuilder response = Json.createObjectBuilder();
 		User user = (User) session.getAttribute("user");
 
-		Result result = rc.getResult(user, resultId);
+		Job result = rc.getResult(user, resultId);
 		if (result == null) {
 			response.add("message", "Unable to get result for that id");
 		} else {
 			response.add("resultId", resultId);
-			response.add("status", result.getResultStatus().toString());
-			if(result.getResultStatus() == ResultStatus.ERROR) {
+			response.add("status", result.getJobStatus().toString());
+			if(result.getJobStatus() == JobStatus.ERROR) {
 				response.add("message", result.getMessage());
 			}
 		}
