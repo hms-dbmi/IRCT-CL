@@ -6,7 +6,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
-import javax.enterprise.context.ConversationScoped;
+import javax.enterprise.context.RequestScoped;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.json.Json;
@@ -44,8 +44,14 @@ import edu.harvard.hms.dbmi.bd2k.irct.model.resource.Resource;
 import edu.harvard.hms.dbmi.bd2k.irct.model.result.exception.PersistableException;
 import edu.harvard.hms.dbmi.bd2k.irct.model.security.SecureSession;
 
+/**
+ * Creates a REST interface for the action service
+ * 
+ * @author Jeremy R. Easton-Marks
+ *
+ */
 @Path("/actionService")
-@ConversationScoped
+@RequestScoped
 @Named
 public class ActionService implements Serializable {
 	private static final long serialVersionUID = 2374441778286932013L;
@@ -55,10 +61,10 @@ public class ActionService implements Serializable {
 
 	@Inject
 	private ResourceController rc;
-	
+
 	@Inject
 	private ExecutionController ec;
-	
+
 	@Inject
 	private JoinController jc;
 
@@ -91,23 +97,52 @@ public class ActionService implements Serializable {
 			return Response.status(400).entity(response.build()).build();
 		}
 
-		 try {
-			 response.add("jobId", ec.runExecutable(ac.getRootExecutionNode(), (SecureSession) session.getAttribute("secureSession")));
-		 } catch (PersistableException e) {
-			 response.add("status", "Error running request");
-			 response.add("message", "An error occurred running this request");
-			 return Response.status(400).entity(response.build()).build();
-		 } catch (ActionException e) {
-			 response.add("status", "Error running request");
-			 response.add("message", e.getMessage());
-			 return Response.status(400).entity(response.build()).build();
+		try {
+			response.add("jobId", ec.runExecutable(ac.getRootExecutionNode(),
+					(SecureSession) session.getAttribute("secureSession")));
+		} catch (PersistableException e) {
+			response.add("status", "Error running request");
+			response.add("message", "An error occurred running this request");
+			return Response.status(400).entity(response.build()).build();
+		} catch (ActionException e) {
+			response.add("status", "Error running request");
+			response.add("message", e.getMessage());
+			return Response.status(400).entity(response.build()).build();
 		}
 
 		return Response.ok(response.build(), MediaType.APPLICATION_JSON)
 				.build();
 	}
 
-	private void convertJsonToAction(JsonObject jsonQuery)
+	private void convertJsonToAction(JsonObject jsonAction)
+			throws QueryException, ActionException, JoinException {
+
+		// Is Action type of Query?
+		if (jsonAction.containsKey("select") || jsonAction.containsKey("where")) {
+			convertJsonQueryToAction(jsonAction);
+		} else if (jsonAction.containsKey("resource")) {
+			// Is Action type of Process?
+			convertJsonProcessToAction(jsonAction);
+		} else if (jsonAction.containsKey("joinType")) {
+			// Is Action type of IRCT Join
+			convertJsonJoinToAction(jsonAction);
+		} else {
+			// Is action of type unknown
+			throw new ActionException("Unknown Action Type");
+		}
+	}
+
+	
+
+	private void convertJsonJoinToAction(JsonObject jsonJoin) {
+		
+	}
+	
+	private void convertJsonProcessToAction(JsonObject jsonProcess) {
+		
+	}
+
+	private void convertJsonQueryToAction(JsonObject jsonQuery)
 			throws QueryException, ActionException, JoinException {
 
 		SubQuery subQuery = null;
@@ -342,8 +377,7 @@ public class ActionService implements Serializable {
 
 		ac.addSortClause(entity, sortType, fields, objectFields);
 	}
-	
-	
+
 	private void addJsonJoinClauseToQuery(SubQuery sq, JsonObject joinClause)
 			throws QueryException, ActionException, JoinException {
 		String path = null;
@@ -363,45 +397,44 @@ public class ActionService implements Serializable {
 			}
 			entity = new Entity(path);
 		}
-		
+
 		String joinName = joinClause.getString("joinType");
 		Map<String, Field> clauseFields = new HashMap<String, Field>();
 		Map<String, Object> objectFields = new HashMap<String, Object>();
 		Map<String, String> fields = new HashMap<String, String>();
-		
+
 		if ((resource == null) || (entity == null)) {
-			//Inter resource joins
+			// Inter resource joins
 			IRCTJoin irctJoin = jc.getIRCTJoin(joinName);
-			
-			if(irctJoin == null) {
+
+			if (irctJoin == null) {
 				throw new JoinException("Unknown join type");
 			}
-			
+
 			for (Field field : irctJoin.getFields()) {
 				clauseFields.put(field.getPath(), field);
 			}
-			
+
 			if (joinClause.containsKey("fields")) {
 				JsonObject fieldObject = joinClause.getJsonObject("fields");
 				objectFields = getObjectFields(clauseFields, fieldObject);
 				fields = getStringFields(clauseFields, fieldObject);
 			}
-			
+
 			ac.addJoinClause(entity, irctJoin, fields, objectFields);
-			
-			
+
 		} else {
-			//Resource join
+			// Resource join
 			JoinType jointType = resource.getSupportedJoinByName(joinName);
 
 			if (jointType == null) {
 				throw new QueryException("Unsupported Join Type");
 			}
-			
+
 			for (Field field : jointType.getFields()) {
 				clauseFields.put(field.getPath(), field);
 			}
-			
+
 			if (joinClause.containsKey("fields")) {
 				JsonObject fieldObject = joinClause.getJsonObject("fields");
 				objectFields = getObjectFields(clauseFields, fieldObject);
@@ -410,9 +443,7 @@ public class ActionService implements Serializable {
 
 			ac.addJoinClause(entity, jointType, fields, objectFields);
 		}
-		
 
-		
 	}
 
 	private Map<String, Object> getObjectFields(
