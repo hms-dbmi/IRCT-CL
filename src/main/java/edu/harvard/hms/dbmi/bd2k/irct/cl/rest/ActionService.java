@@ -4,6 +4,7 @@ import java.io.Serializable;
 import java.io.StringReader;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 import javax.enterprise.context.RequestScoped;
@@ -30,13 +31,14 @@ import edu.harvard.hms.dbmi.bd2k.irct.controller.ResourceController;
 import edu.harvard.hms.dbmi.bd2k.irct.exception.ActionException;
 import edu.harvard.hms.dbmi.bd2k.irct.exception.JoinException;
 import edu.harvard.hms.dbmi.bd2k.irct.exception.QueryException;
+import edu.harvard.hms.dbmi.bd2k.irct.executable.ExecutableChildNode;
 import edu.harvard.hms.dbmi.bd2k.irct.model.join.IRCTJoin;
+import edu.harvard.hms.dbmi.bd2k.irct.model.ontology.DataType;
 import edu.harvard.hms.dbmi.bd2k.irct.model.ontology.Entity;
 import edu.harvard.hms.dbmi.bd2k.irct.model.query.JoinType;
 import edu.harvard.hms.dbmi.bd2k.irct.model.query.PredicateType;
 import edu.harvard.hms.dbmi.bd2k.irct.model.query.SelectOperationType;
 import edu.harvard.hms.dbmi.bd2k.irct.model.query.SortOperationType;
-import edu.harvard.hms.dbmi.bd2k.irct.model.query.SubQuery;
 import edu.harvard.hms.dbmi.bd2k.irct.model.resource.Field;
 import edu.harvard.hms.dbmi.bd2k.irct.model.resource.LogicalOperator;
 import edu.harvard.hms.dbmi.bd2k.irct.model.resource.PrimitiveDataType;
@@ -72,7 +74,7 @@ public class ActionService implements Serializable {
 	private HttpSession session;
 
 	/**
-	 * Runs an action using a JSON representation of the Query
+	 * Runs an action using a JSON representation of the Action
 	 * 
 	 * @param payload
 	 *            JSON
@@ -82,15 +84,15 @@ public class ActionService implements Serializable {
 	@POST
 	@Path("/run")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response runQuery(String payload) {
+	public Response runAction(String payload) {
 		JsonObjectBuilder response = Json.createObjectBuilder();
 
 		JsonReader jsonReader = Json.createReader(new StringReader(payload));
 		JsonObject jsonQuery = jsonReader.readObject();
 		jsonReader.close();
 		try {
-			ac.createAction();
-			convertJsonToAction(jsonQuery);
+			ExecutableChildNode ecn = ac.createAction();
+			convertJsonToAction(ecn, jsonQuery);
 		} catch (QueryException | JoinException | ActionException e) {
 			response.add("status", "Invalid Request");
 			response.add("message", e.getMessage());
@@ -114,45 +116,45 @@ public class ActionService implements Serializable {
 				.build();
 	}
 
-	private void convertJsonToAction(JsonObject jsonAction)
-			throws QueryException, ActionException, JoinException {
+	private void convertJsonToAction(ExecutableChildNode baseExecutable,
+			JsonObject jsonAction) throws QueryException, ActionException,
+			JoinException {
 
 		// Is Action type of Query?
 		if (jsonAction.containsKey("select") || jsonAction.containsKey("where")) {
-			convertJsonQueryToAction(jsonAction);
+			convertJsonQueryToAction(baseExecutable, jsonAction);
 		} else if (jsonAction.containsKey("resource")) {
 			// Is Action type of Process?
-			convertJsonProcessToAction(jsonAction);
+			convertJsonProcessToAction(baseExecutable, jsonAction);
 		} else if (jsonAction.containsKey("joinType")) {
 			// Is Action type of IRCT Join
-			convertJsonJoinToAction(jsonAction);
+			convertJsonJoinToAction(baseExecutable, jsonAction);
 		} else {
 			// Is action of type unknown
 			throw new ActionException("Unknown Action Type");
 		}
 	}
 
-	
+	private void convertJsonJoinToAction(ExecutableChildNode baseExecutable,
+			JsonObject jsonJoin) {
 
-	private void convertJsonJoinToAction(JsonObject jsonJoin) {
-		
-	}
-	
-	private void convertJsonProcessToAction(JsonObject jsonProcess) {
-		
 	}
 
-	private void convertJsonQueryToAction(JsonObject jsonQuery)
-			throws QueryException, ActionException, JoinException {
+	private void convertJsonProcessToAction(ExecutableChildNode baseExecutable,
+			JsonObject jsonProcess) {
 
-		SubQuery subQuery = null;
+	}
+
+	private void convertJsonQueryToAction(ExecutableChildNode baseExecutable,
+			JsonObject jsonQuery) throws QueryException, ActionException,
+			JoinException {
 
 		// Convert JSON Selects
 		if (jsonQuery.containsKey("select")) {
 			JsonArray selectClauses = jsonQuery.getJsonArray("select");
 			Iterator<JsonValue> selectIterator = selectClauses.iterator();
 			while (selectIterator.hasNext()) {
-				addJsonSelectClauseToQuery(subQuery,
+				addJsonSelectClauseToQuery(baseExecutable,
 						(JsonObject) selectIterator.next());
 			}
 		}
@@ -161,7 +163,7 @@ public class ActionService implements Serializable {
 			JsonArray whereClauses = jsonQuery.getJsonArray("where");
 			Iterator<JsonValue> whereIterator = whereClauses.iterator();
 			while (whereIterator.hasNext()) {
-				addJsonWhereClauseToQuery(subQuery,
+				addJsonWhereClauseToQuery(baseExecutable,
 						(JsonObject) whereIterator.next());
 			}
 		}
@@ -170,7 +172,7 @@ public class ActionService implements Serializable {
 			JsonArray sortClauses = jsonQuery.getJsonArray("sort");
 			Iterator<JsonValue> sortIterator = sortClauses.iterator();
 			while (sortIterator.hasNext()) {
-				addJsonSortClauseToQuery(subQuery,
+				addJsonSortClauseToQuery(baseExecutable,
 						(JsonObject) sortIterator.next());
 			}
 		}
@@ -180,14 +182,14 @@ public class ActionService implements Serializable {
 			JsonArray sortClauses = jsonQuery.getJsonArray("join");
 			Iterator<JsonValue> sortIterator = sortClauses.iterator();
 			while (sortIterator.hasNext()) {
-				addJsonJoinClauseToQuery(subQuery,
+				addJsonJoinClauseToQuery(baseExecutable,
 						(JsonObject) sortIterator.next());
 			}
 		}
 	}
 
-	private void addJsonSelectClauseToQuery(SubQuery sq, JsonObject selectClause)
-			throws QueryException, ActionException {
+	private void addJsonSelectClauseToQuery(ExecutableChildNode basePosition,
+			JsonObject selectClause) throws QueryException, ActionException {
 		String path = null;
 		String dataType = null;
 		if (selectClause.containsKey("field")) {
@@ -259,11 +261,12 @@ public class ActionService implements Serializable {
 			}
 		}
 
-		ac.addSelectClause(entity, alias, operation, fields, objectFields);
+		ac.addSelectClause(basePosition, entity, alias, operation, fields,
+				objectFields);
 	}
 
-	private void addJsonWhereClauseToQuery(SubQuery sq, JsonObject whereClause)
-			throws QueryException, ActionException {
+	private void addJsonWhereClauseToQuery(ExecutableChildNode baseExecutable,
+			JsonObject whereClause) throws QueryException, ActionException {
 		String path = null;
 		String dataType = null;
 		if (whereClause.containsKey("field")) {
@@ -323,13 +326,13 @@ public class ActionService implements Serializable {
 			}
 		}
 
-		ac.addWhereClause(entity, predicateType, logicalOperator, fields,
-				objectFields);
+		ac.addWhereClause(baseExecutable, entity, predicateType,
+				logicalOperator, fields, objectFields);
 
 	}
 
-	private void addJsonSortClauseToQuery(SubQuery sq, JsonObject sortClause)
-			throws QueryException, ActionException {
+	private void addJsonSortClauseToQuery(ExecutableChildNode baseExecutable,
+			JsonObject sortClause) throws QueryException, ActionException {
 		String path = null;
 		if (sortClause.containsKey("field")) {
 			path = sortClause.getJsonObject("field").getString("pui");
@@ -375,11 +378,12 @@ public class ActionService implements Serializable {
 			fields = getStringFields(clauseFields, fieldObject);
 		}
 
-		ac.addSortClause(entity, sortType, fields, objectFields);
+		ac.addSortClause(baseExecutable, entity, sortType, fields, objectFields);
 	}
 
-	private void addJsonJoinClauseToQuery(SubQuery sq, JsonObject joinClause)
-			throws QueryException, ActionException, JoinException {
+	private void addJsonJoinClauseToQuery(ExecutableChildNode baseExecutable,
+			JsonObject joinClause) throws QueryException, ActionException,
+			JoinException {
 		String path = null;
 
 		if (joinClause.containsKey("field")) {
@@ -421,7 +425,7 @@ public class ActionService implements Serializable {
 				fields = getStringFields(clauseFields, fieldObject);
 			}
 
-			ac.addJoinClause(entity, irctJoin, fields, objectFields);
+			ac.addJoinClause(baseExecutable, irctJoin, fields, objectFields);
 
 		} else {
 			// Resource join
@@ -441,7 +445,8 @@ public class ActionService implements Serializable {
 				fields = getStringFields(clauseFields, fieldObject);
 			}
 
-			ac.addJoinClause(entity, jointType, fields, objectFields);
+			ac.addJoinClause(baseExecutable, entity, jointType, fields,
+					objectFields);
 		}
 
 	}
@@ -452,36 +457,32 @@ public class ActionService implements Serializable {
 		Map<String, Object> objectFields = new HashMap<String, Object>();
 		for (String key : fieldObject.keySet()) {
 			ValueType vt = fieldObject.get(key).getValueType();
+			if (clauseFields.containsKey(key)) {
+				List<DataType> clauseDataTypes = clauseFields.get(key)
+						.getDataTypes();
+				if ((vt == ValueType.ARRAY)) {
+					if (clauseDataTypes.contains(PrimitiveDataType.ARRAY)) {
 
-			if ((vt == ValueType.ARRAY)) {
-				if (clauseFields.containsKey(key)
-						&& (clauseFields.get(key).getDataTypes()
-								.contains(PrimitiveDataType.ARRAY))) {
-
-					JsonArray array = fieldObject.getJsonArray(key);
-					String[] stringArray = new String[array.size()];
-					for (int sa_i = 0; sa_i < array.size(); sa_i++) {
-						stringArray[sa_i] = array.getString(sa_i);
+						JsonArray array = fieldObject.getJsonArray(key);
+						String[] stringArray = new String[array.size()];
+						for (int sa_i = 0; sa_i < array.size(); sa_i++) {
+							stringArray[sa_i] = array.getString(sa_i);
+						}
+						objectFields.put(key, stringArray);
+					} else {
+						throw new QueryException(key
+								+ " field does not support arrays.");
 					}
-					objectFields.put(key, stringArray);
-				} else {
-					throw new QueryException(key
-							+ " field does not support arrays.");
-				}
+				} else if (vt == ValueType.OBJECT) {
+					if (clauseDataTypes.contains(PrimitiveDataType.SUBQUERY)) {
+						// TODO: Add Support for SubQueries
+					} else if (clauseDataTypes
+							.contains(PrimitiveDataType.RESULTSET)) {
 
-			} else if (vt == ValueType.OBJECT) {
-				if (clauseFields.containsKey(key)
-						&& (clauseFields.get(key).getDataTypes()
-								.contains(PrimitiveDataType.SUBQUERY))) {
-
-					// objectFields.put(
-					// key,
-					// convertJsonToQuery(qc.createSubQuery(),
-					// fieldObject.getJsonObject(key)));
-
-				} else {
-					throw new QueryException(key
-							+ " field does not support subqueries.");
+					} else {
+						throw new QueryException(key
+								+ " field does not this data type");
+					}
 				}
 			}
 		}
